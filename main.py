@@ -79,9 +79,7 @@ async def process_question(request: QuestionRequest):
         print(f"Extracted entities: District='{district}', Commodity='{commodity}'")
 
         api_url = (
-            "https://api.data.gov.in/resource/9ef84268-d588-465a-a308-a864a43d0070"
-            f"?api-key={DATA_GOV_API_KEY}&format=json"
-            f"&filters[district]={district}&filters[commodity]={commodity}"
+            f"https://api.data.gov.in/resource/9ef84268-d588-465a-a308-a864a43d0070?api-key={DATA_GOV_API_KEY}&format=json&filters%5Bdistrict%5D={district}&filters%5Bcommodity%5D={commodity}"
         )
 
         async with httpx.AsyncClient() as client:

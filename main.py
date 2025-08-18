@@ -42,12 +42,12 @@ app = FastAPI(
     version="1.1.0",
 )
 
-origins = ["*","http://localhost:5173"]
+origins = ["http://localhost:5173"]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=False,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"]
 )
@@ -501,16 +501,6 @@ The process has been optimized to avoid wasted resources when no data exists."""
 def read_root():
     """A default root endpoint to welcome users."""
     return {"message": "Welcome to the KrishiSetu Farmer AI Assistant API!"}
-
-@app.post("/query/")
-async def handle_query(query_input: QueryInput):
-    """Handles a user's text-based query (Placeholder)."""
-    print(f"Received question: '{query_input.question}' for location: Lat {query_input.location.latitude}, Lon {query_input.location.longitude}")
-    response_text = (
-        f"AI response for your question: '{query_input.question}'. This information is tailored for the location with "
-        f"Latitude: {query_input.location.latitude} and Longitude: {query_input.location.longitude}."
-    )
-    return {"response": response_text}
 
 @app.post("/detect/")
 async def detect_plant_disease(

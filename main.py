@@ -10,6 +10,7 @@ import contextlib
 
 # FastAPI and Uvicorn
 from fastapi import FastAPI, UploadFile, File, Form
+from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 # Pydantic for data validation
@@ -39,6 +40,14 @@ app = FastAPI(
     title="KrishiSetu",
     description="An API for farmers providing query handling, disease detection, weather information, and a proactive sales agent.",
     version="1.1.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
 )
 
 # Initialize Google GenAI Client

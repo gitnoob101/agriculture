@@ -1,6 +1,14 @@
 fastapi
-uvicorn
-httpx
 google-generativeai
-python-dotenv
+langchain
+langchain-core
+langchain-google-genai
+openai
+openmeteo-requests
+pandas
 pydantic
+python-dotenv
+python-multipart
+requests-cache
+retry-requests
+uvicorn

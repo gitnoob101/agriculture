@@ -178,6 +178,10 @@ market_prices = {
     "Coffee Beans": {"current_avg": 11500, "trend": "volatile", "seasonal_factor": 1.1}
 }
 
+# --- In-memory state for negotiations ---
+# In a production app, this would be a database or Redis cache.
+negotiation_state: Dict[str, float] = {}
+
 
 # --- Enhanced AI Tools for Sales Agent ---
 @tool
@@ -261,52 +265,96 @@ def analyze_market_conditions(commodity: str) -> Dict[str, Any]:
 
 @tool
 def calculate_smart_price(input_string: str) -> Dict[str, Any]:
-    """Calculates an intelligent price using multiple factors for maximum profit."""
+    """
+    Calculates an intelligent price. IMPORTANT: The final price must never be less than the farmer's minimum price.
+    Input format: 'farmer_min_price,buyer_name,buyer_rating,quantity_tonnes,urgency,market_avg'
+    Example: '3500.0,Punjab Wholesalers,4.9,30,High,4200.0'
+    """
     try:
         parts = input_string.split(',')
         if len(parts) != 6:
-            return {"error": "Input format should be 'base_price,buyer_name,rating,quantity,urgency,market_avg'"}
+            return {"error": "Input format should be 'farmer_min_price,buyer_name,rating,quantity,urgency,market_avg'"}
         
-        base_price, buyer_name, buyer_rating, quantity_tonnes, urgency, market_avg = [p.strip() for p in parts]
-        base_price, buyer_rating, quantity_tonnes, market_avg = float(base_price), float(buyer_rating), int(quantity_tonnes), float(market_avg)
+        farmer_min_price, buyer_name, buyer_rating, quantity_tonnes, urgency, market_avg = [p.strip() for p in parts]
+        farmer_min_price, buyer_rating, quantity_tonnes, market_avg = float(farmer_min_price), float(buyer_rating), int(quantity_tonnes), float(market_avg)
     except Exception as e:
         return {"error": f"Invalid input format: {e}"}
     
     print(f"\n🧮 SMART PRICING: Calculating optimal price for {buyer_name}...")
     
-    final_price = base_price
-    adjustments = []
+    # Start with the farmer's minimum price as the absolute floor
+    final_price = farmer_min_price
     
-    if buyer_rating >= 4.8:
-        adjustment = -30
-        final_price += adjustment
-        adjustments.append(f"Premium buyer discount: {adjustment}")
-    elif buyer_rating < 4.0:
-        adjustment = +50
-        final_price += adjustment
-        adjustments.append(f"Risk premium: +{adjustment}")
-
-    if quantity_tonnes >= 50:
-        adjustment = -25
-        final_price += adjustment
-        adjustments.append(f"Bulk order discount: {adjustment}")
-
+    # Add adjustments based on market factors
     if urgency == "High":
-        adjustment = +75
-        final_price += adjustment
-        adjustments.append(f"Urgency premium: +{adjustment}")
+        final_price += 75
+    if buyer_rating >= 4.8:
+        final_price += 50 # Premium for reliable buyer
+    if quantity_tonnes >= 30:
+        final_price += 25 # Premium for bulk order
 
-    final_price = round(max(final_price, base_price * 0.95), 2)
-    profit_margin = ((final_price - base_price) / base_price) * 100
+    # Ensure the smart price is never below the farmer's minimum
+    final_price = max(final_price, farmer_min_price)
     
-    print(f"   💰 Base Price: ₹{base_price}")
-    print(f"   🎯 Final Price: ₹{final_price}")
-    print(f"   📊 Profit Margin: {profit_margin:.1f}%")
-    
-    return {
-        "final_price": final_price, "base_price": base_price, "adjustments": adjustments,
-        "profit_margin": profit_margin, "market_competitive": final_price <= market_avg * 1.15
-    }
+    print(f"   🎯 Calculated Smart Price: ₹{final_price}")
+    return {"calculated_price": final_price}
+
+@tool
+def get_dealer_response(input_string: str) -> str:
+    """
+    Simulates getting a counter-offer from a dealer during a negotiation. This tool is STATEFUL.
+    Input format: 'agent_offer_price,buyer_max_price,buyer_name,farmer_min_price,rfq_id'
+    Example: '3800.0,4200.0,Delhi Grocers Pvt. Ltd.,3500.0,RFQ_001'
+    """
+    try:
+        parts = input_string.split(',')
+        if len(parts) != 5:
+            return "ERROR: Input format should be 'agent_offer_price,buyer_max_price,buyer_name,farmer_min_price,rfq_id'"
+        
+        agent_offer = float(parts[0].strip())
+        buyer_max_price = float(parts[1].strip())
+        buyer_name = parts[2].strip()
+        farmer_min_price = float(parts[3].strip())
+        rfq_id = parts[4].strip()
+
+    except Exception as e:
+        return f"ERROR: Invalid input format: {e}"
+
+    print(f"\n💬 NEGOTIATING: Sending offer of ₹{agent_offer} to {buyer_name} for RFQ {rfq_id}...")
+
+    # --- STATEFUL NEGOTIATION LOGIC ---
+    last_dealer_offer = negotiation_state.get(rfq_id)
+
+    if last_dealer_offer is None:
+        # This is the FIRST offer. Dealer makes a low-ball counter.
+        dealer_counter = agent_offer * random.uniform(0.95, 0.98) # 2-5% lower
+        if dealer_counter < farmer_min_price:
+             dealer_counter = farmer_min_price + random.randint(20, 50)
+        dealer_counter = round(dealer_counter)
+        
+        reasons = [
+            "That's a bit high to start. Let's start the conversation from here.",
+            "Our budget is tight, but we are interested. Here is our initial offer."
+        ]
+        response = f"Dealer '{buyer_name}' has responded with a low initial offer. Their counter-offer is ₹{dealer_counter}. Reason: '{random.choice(reasons)}'"
+    else:
+        # This is a SUBSEQUENT offer. Dealer must offer MORE than their last offer.
+        price_gap = agent_offer - last_dealer_offer
+        # Dealer meets partway, but always increases their offer
+        dealer_counter = last_dealer_offer + (price_gap * random.uniform(0.4, 0.7))
+        dealer_counter = round(dealer_counter)
+        
+        reasons = [
+            "This is a competitive market, but we can meet you at this price.",
+            "That's a better offer. This is our best and final counter-offer.",
+        ]
+        response = f"Dealer '{buyer_name}' has responded to your counter. Their new offer is ₹{dealer_counter}. Reason: '{random.choice(reasons)}'"
+
+    # Store the new offer in our state
+    negotiation_state[rfq_id] = dealer_counter
+    print(f"   - {response}")
+    return response
+
 
 @tool
 def submit_quote(input_string: str) -> str:
@@ -353,6 +401,15 @@ def submit_quote(input_string: str) -> str:
     print("✅ Quote submitted successfully!")
     return success_message
 
+@tool
+def finalize_deal(input_string: str) -> str:
+    """
+    Use this tool ONLY AFTER a price has been agreed upon to finalize the deal.
+    Input format: 'final_price,buyer_name'
+    Example: '3750.0,Punjab Wholesalers'
+    """
+    return f"Deal finalized with {input_string.split(',')[1]} at a price of ₹{input_string.split(',')[0]}."
+
 # --- Mock LLM for Demo Mode ---
 class OptimizedMockLLM:
     def invoke(self, *args, **kwargs):
@@ -360,60 +417,48 @@ class OptimizedMockLLM:
 
 # --- Proactive Agent Logic ---
 def run_proactive_agent(farmer_details: dict):
-    """Runs the intelligent proactive sales agent."""
-    print(f"""
-🤖 PROACTIVE AI SALES AGENT ACTIVATED
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-👨‍🌾 Farmer: {farmer_details['farmer_name']}
-🌾 Commodity: {farmer_details['commodity']} (Grade {farmer_details['grade']})
-💰 Minimum Price: ₹{farmer_details['minimum_price']:,.2f}/quintal
-📍 Location: {farmer_details['location']}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔄 Starting intelligent market analysis and sales automation...
-""")
+    """Runs the agent to SIMULATE a negotiation and generate a chat script."""
+    global negotiation_state
+    negotiation_state = {}
     
-    tools = [scan_for_opportunities, analyze_market_conditions, calculate_smart_price, submit_quote]
+    print(f"\n🤖 PROACTIVE AI SALES AGENT [CHAT SIMULATION] ACTIVATED for {farmer_details['farmer_name']}...")
     
-    if API_KEY == "demo_mode":
-        print("🎭 Running in DEMO MODE with optimized AI responses...\n")
-        optimized_demo_execution(farmer_details, tools)
-        return
-
-    llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0.1, google_api_key=API_KEY)
+    llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0.2, google_api_key=API_KEY)
     
+    tools = [scan_for_opportunities, analyze_market_conditions, calculate_smart_price, get_dealer_response, finalize_deal]
+    
+    # UPDATED PROMPT: The goal is to use ALL tools, then generate a chat script
     prompt_template = """
-You are an elite AI sales agent specializing in agricultural commodity trading. Your mission is to maximize profits for farmers by automating their entire sales process with intelligence and efficiency. IMPORTANT: If no opportunities are found in the initial scan, IMMEDIATELY terminate with a helpful Final Answer. Do NOT retry the same action multiple times.
-AVAILABLE TOOLS: {tools}
+You are a savvy AI sales agent for Indian farmers. Your goal is to use all your tools to find and negotiate the best deal, and then generate a realistic chat script of that negotiation as your final answer.
+
+AVAILABLE TOOLS:
+{tools}
+
 RESPONSE FORMAT (Follow this EXACTLY):
 Thought: [Your reasoning about the next step]
 Action: [Tool name from: {tool_names}]
-Action Input: [Single string with comma-separated values - NO spaces after commas]
+Action Input: [Single string with comma-separated values]
 Observation: [Tool result will appear here]
-... (repeat Thought/Action/Action Input/Observation as needed)
-Thought: [Final reasoning]
-Final Answer: [Comprehensive summary of achievements]
+... (repeat Thought/Action/Action Input/Observation)
+Thought: [Your final thought before generating the script]
+Final Answer: [A well-formatted, turn-by-turn chat script of the entire negotiation]
+
 FARMER PROFILE:
 • Name: {farmer_name}
 • Commodity: {commodity} (Grade {grade})
 • Minimum Price: ₹{minimum_price}/quintal
-• Location: {location}
-CRITICAL RULES:
-1. If scan_for_opportunities returns empty matches, STOP immediately and provide Final Answer
-2. NEVER retry the same action with the same input
-3. Maximum 5 actions total - be efficient
-4. Always check if previous action succeeded before proceeding
-TOOL INPUT FORMATS (CRITICAL - Follow exactly):
-• scan_for_opportunities: commodity,grade (e.g., "Wheat,B")
-• analyze_market_conditions: commodity (e.g., "Wheat")
-• calculate_smart_price: base_price,buyer_name,rating,quantity,urgency,market_avg
-• submit_quote: rfq_id,buyer_name,price,farmer_name,commodity,grade
-EFFICIENT WORKFLOW:
-1. 🔍 SCAN ONCE: Use scan_for_opportunities with format "commodity,grade"
-2. ❌ IF NO MATCHES: Immediately provide Final Answer with alternatives
-3. ✅ IF MATCHES FOUND: Continue with market analysis and pricing
-4. 🎯 SELECT BEST BUYER: Choose highest rated buyer
-5. 📤 SUBMIT QUOTE: Complete the process
-Begin the intelligent sales automation:
+
+CHAT SIMULATION WORKFLOW:
+1. 🔍 SCAN for the best opportunity.
+2. ❌ IF NO MATCHES: Immediately provide a Final Answer stating no buyers were found.
+3. 📊 ANALYZE market conditions for the chosen commodity.
+4. 💰 CALCULATE an ambitious but fair opening offer using all relevant data.
+5. 💬 NEGOTIATE: Use 'get_dealer_response' to get the dealer's counter-offer.
+6. 🔄 COUNTER-OFFER: Respond to the dealer's counter. Do this 1-2 times.
+7. 🤝 FINALIZE DEAL: Use the 'finalize_deal' tool once a profitable price is agreed upon.
+8. ✍️ GENERATE SCRIPT: Your Final Answer MUST be the complete, formatted chat script of the negotiation you just simulated.
+
+Begin the simulation:
 {input}
 {agent_scratchpad}"""
 
@@ -421,19 +466,23 @@ Begin the intelligent sales automation:
     agent = create_react_agent(llm, tools, prompt)
     agent_executor = AgentExecutor(
         agent=agent, tools=tools, verbose=True, handle_parsing_errors=True,
-        max_iterations=5, early_stopping_method="generate"
+        max_iterations=10, 
+        early_stopping_method="generate"
     )
     
     try:
         result = agent_executor.invoke({
-            "input": "Execute the complete intelligent sales process to find and secure the best deal for my crops. If no buyers are found, provide alternatives immediately.",
-            "farmer_name": farmer_details['farmer_name'], "commodity": farmer_details['commodity'],
-            "grade": farmer_details['grade'], "minimum_price": farmer_details['minimum_price'],
-            "location": farmer_details['location']
+            "input": "Simulate a negotiation using all tools and generate the chat script.",
+            "farmer_name": farmer_details['farmer_name'],
+            "commodity": farmer_details['commodity'],
+            "grade": farmer_details['grade'],
+            "minimum_price": farmer_details['minimum_price'],
         })
-        print(f"\n{result['output']}")
+        return result['output']
     except Exception as e:
         print(f"❌ ERROR: {e}")
+        return f"An error occurred during agent execution: {e}"
+
 
 def optimized_demo_execution(farmer_details: dict, tools):
     """Optimized demo execution that handles no-data scenarios efficiently"""

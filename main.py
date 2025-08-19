@@ -54,13 +54,11 @@ class QueryInput(BaseModel):
 
 # New model for the /setuAgent endpoint
 class FarmerProfile(BaseModel):
-    """Input model for the proactive sales agent."""
-    farmer_name: str = Field(..., examples=["Ramesh Kumar"], description="The farmer's full name.")
-    commodity: str = Field(..., examples=["Basmati Rice"], description="The commodity the farmer is selling.")
-    grade: str = Field(..., examples=["A"], description="The grade of the commodity (e.g., A, B, C).")
-    minimum_price: float = Field(..., examples=[3500.0], description="The farmer's minimum acceptable price per quintal.")
-    location: str = Field(..., examples=["Karnal, Haryana"], description="The farmer's location.")
-
+    farmer_name: str = Field(..., examples=["Ramesh Kumar"])
+    commodity: str = Field(..., examples=["Basmati Rice"])
+    grade: str = Field(..., examples=["A"])
+    minimum_price: float = Field(..., examples=[3500.0])
+    location: str = Field(..., examples=["Karnal, Haryana"])
 
 # --- API Endpoints ---
 
@@ -139,15 +137,5 @@ async def run_sales_agent(profile: FarmerProfile):
     # Convert the Pydantic model to a dictionary for the agent function
     farmer_details = profile.model_dump()
     
-    # Use StringIO and redirect_stdout to capture all print statements from the agent's run
-    output_buffer = io.StringIO()
-    with contextlib.redirect_stdout(output_buffer):
-        # The agent function is synchronous. In a high-traffic production app,
-        # you might run this in a thread pool to avoid blocking.
-        # For this integration, a direct call is sufficient.
-        logic.run_proactive_agent(farmer_details)
-        
-    # Get the captured output as a string
-    agent_output = output_buffer.getvalue()
-    
-    return {"agent_run_log": agent_output}
+    chat_script = logic.run_proactive_agent(farmer_details)
+    return {"agent_run_log": chat_script}
